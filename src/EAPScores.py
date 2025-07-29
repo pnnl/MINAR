@@ -1,20 +1,9 @@
 import torch
-import torch_geometric as pyg
-from utils import _place_hook
+from .utils import _place_hook, _apply_model
 
 def _ensure_requires_grad(t):
     if hasattr(t, 'requires_grad') and torch.is_floating_point(t):
         t.requires_grad_()
-
-def _apply_model(model, data):
-    if model.supports_edge_weight and model.supports_edge_attr:
-        return model(data.x, data.edge_index, edge_weight=data.edge_weight, edge_attr=data.edge_attr)
-    elif model.supports_edge_weight:
-        return model(data.x, data.edge_index, edge_weight=data.edge_weight)
-    elif model.supports_edge_attr:
-        return model(data.x, data.edge_index, edge_attr=data.edge_attr)
-    else:
-        return model(data.x, data.edge_index)
 
 def compute_eap_scores(model, data, data_corr, loss):
     data.apply_(_ensure_requires_grad)
@@ -56,11 +45,11 @@ def compute_eap_scores(model, data, data_corr, loss):
     backward_handles = []
     for name, module in model.named_modules():
         if _place_hook(module, hook_str='register_full_backward_hook'):
-            clean_handles.append(module.register_full_backward_hook(_get_gradients(name)))
+            backward_handles.append(module.register_full_backward_hook(_get_gradients(name)))
 
     # get activations and gradients
     out_clean = _apply_model(model, data)
-    L = loss(out_corr, out_clean)
+    L = loss(out_clean, out_corr)
     L.backward()
     for h in clean_handles:
         h.remove()

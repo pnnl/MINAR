@@ -1,11 +1,13 @@
 import re
+import copy
 import numpy as np
 import torch
 import torch_geometric as pyg
 import networkx as nx
 import itertools
-from EAPScores import compute_eap_scores
-from utils import longest_path, _place_hook
+from collections import OrderedDict
+from .EAPScores import compute_eap_scores
+from .utils import longest_path, _place_hook, _apply_model
 
 def enumerated_product(*args):
     yield from zip(itertools.product(*(range(len(x)) for x in args)), itertools.product(*args))
@@ -15,8 +17,10 @@ class ComputationGraph(nx.DiGraph):
     def __init__(self, model):
         super().__init__()
         
+        self.model = model
         input_dim = model.in_channels
         self.top_sort = [[f'input.{i}' for i in range(input_dim)]]
+        self.layer_modules = []
         for v in self.top_sort[0]:
             self.add_node(v, layer = 0)
         l = 1
@@ -32,6 +36,7 @@ class ComputationGraph(nx.DiGraph):
                             j = int(re.match('.*?([0-9]+)$', u).group(1))
                             self.add_edge(u, v, weight = float(module.weight[i,j]))
                 self.top_sort.append(layer)
+                self.layer_modules.append((name, module))
                 l += 1
         
     def add_inputs(self, new_inputs, default_weight = 1):
@@ -41,6 +46,7 @@ class ComputationGraph(nx.DiGraph):
         name : [layer] or
         name : [layer, weight]
         where weight is an array of length equal to the size of layer.
+        Note that the new inputs will always be put in layer 0.
         If name : [layer] is passed, the weight values will all be default_weight
         (e.g. the assumption will be that the new input is added to the activations
         rather than concatenated)
@@ -98,7 +104,7 @@ class ComputationGraph(nx.DiGraph):
             for (i,j), (u,v) in enumerated_product(src_lst, dst_lst):
                 self.add_edge(u,v, weight = weight[i,j])
 
-    def calculate_scores(self, model, clean_data, corrupted_data, loss, which = 'EAP'):
+    def calculate_scores(self, clean_data, corrupted_data, loss, which = 'EAP'):
         if which == 'EAP':
             score_function = compute_eap_scores
         else:
@@ -106,31 +112,79 @@ class ComputationGraph(nx.DiGraph):
         all_scores = []
         avg_scores = {}
         for data, data_corr in zip(clean_data, corrupted_data):
-            all_scores.append(score_function(model, data, data_corr, loss))
+            all_scores.append(score_function(self.model, data, data_corr, loss))
         for key in all_scores[0].keys():
             avg_scores[key] = torch.mean(torch.stack([score_dict[key] for score_dict in all_scores]), 0)
         for key, score in avg_scores.items():
             for j in range(score.shape[1]):
                 v = key + f'.{j}'
                 for i, e in enumerate(self.in_edges(v)):
-                    nx.set_edge_attributes(self, {e : {'eap_score' : float(score[i,j].abs())}})
+                    nx.set_edge_attributes(self, {e : {which : float(score[i,j].abs())}})
 
-def create_circuit(G, K, key = 'weight'):
-    circuit_edges = set()
-    sorted_edges = iter(sorted(nx.get_edge_attributes(G, key).items(), key=lambda item: item[1], reverse=True))
-    path = longest_path(G, G.top_sort[0], G.top_sort[-1], top_sort=G.top_sort, key = key)
-    sorted_edges = iter(sorted(nx.get_edge_attributes(G, key).items(), key=lambda item: item[1], reverse=True))
-    for j in range(1, len(path)):
-        circuit_edges.add((path[j-1], path[j]))
+class Circuit(nx.DiGraph):
 
-    k = 0
-    while k < K:
-        edge_to_add, _ = next(sorted_edges)
-        if edge_to_add not in circuit_edges:
-            pre_path = longest_path(G, G.top_sort[0], [edge_to_add[0]], top_sort=G.top_sort, key=key)
-            post_path = longest_path(G, [edge_to_add[1]], G.top_sort[-1], top_sort=G.top_sort, key=key)
-            path = pre_path + post_path
-            for j in range(1, len(path)):
-                circuit_edges.add((path[j-1], path[j]))
-            k += 1
-    return G.to_directed(as_view=True).edge_subgraph(circuit_edges)
+    def __init__(self, model,
+                 G=None, K=10, key='weight',
+                 as_view=True, use_abs=True):
+
+        self.model = model
+        self.model_state_dict = copy.deepcopy(model.state_dict())
+        self.mask_handles = []
+        if G is not None:
+            self.G = G
+        else:
+            G = ComputationGraph(model)
+
+        assert nx.get_edge_attributes(G, key) is not None
+
+        circuit_edges = set()
+        if use_abs:
+            sorted_edges = iter(sorted(nx.get_edge_attributes(G, key).items(), key=lambda item: abs(item[1]), reverse=True))
+        else:
+            sorted_edges = iter(sorted(nx.get_edge_attributes(G, key).items(), key=lambda item: item[1], reverse=True))
+        path = longest_path(G, G.top_sort[0], G.top_sort[-1], top_sort=G.top_sort, key = key)
+        for j in range(1, len(path)):
+            circuit_edges.add((path[j-1], path[j]))
+
+        k = 0
+        while k < K:
+            edge_to_add, _ = next(sorted_edges)
+            if edge_to_add not in circuit_edges:
+                pre_path = longest_path(G, G.top_sort[0], [edge_to_add[0]], top_sort=G.top_sort, key=key)
+                post_path = longest_path(G, [edge_to_add[1]], G.top_sort[-1], top_sort=G.top_sort, key=key)
+                path = pre_path + post_path
+                for j in range(1, len(path)):
+                    circuit_edges.add((path[j-1], path[j]))
+                k += 1
+        
+        super().__init__(G.to_directed(as_view=as_view).edge_subgraph(circuit_edges))
+
+    def _apply_masks(self):
+        def _mask_module(mask):
+            def _mask_pre_hook(module, input):
+                module.weight.data *= mask
+            return _mask_pre_hook
+
+        for l, (name, module) in enumerate(self.G.layer_modules):
+            mask = torch.zeros_like(module.weight)
+            layer = self.G.top_sort[l+1]
+            input_dict = OrderedDict()
+            for v in layer:
+                for u in self.G.predecessors(v):
+                    input_dict[u] = None
+            inputs = list(input_dict.keys())
+            for (j, u), (i, v) in itertools.product(enumerate(inputs), enumerate(layer)):
+                mask[i,j] = self.has_edge(u,v)
+            self.mask_handles.append(module.register_forward_pre_hook(_mask_module(mask)))
+    
+    def _clear_masks(self):
+        self.model.load_state_dict(self.model_state_dict)
+        while self.mask_handles:
+            h = self.mask_handles.pop()
+            h.remove()
+
+    def forward(self, data):
+        self._apply_masks()
+        out = _apply_model(self.model, data)
+        self._clear_masks()
+        return out
