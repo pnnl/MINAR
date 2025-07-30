@@ -6,7 +6,7 @@ import torch_geometric as pyg
 import networkx as nx
 import itertools
 from collections import OrderedDict
-from .EAPScores import compute_eap_scores
+from .EAPScores import compute_eap_scores, compute_eap_ig_scores
 from .utils import longest_path, _place_hook, _apply_model
 
 def enumerated_product(*args):
@@ -104,15 +104,17 @@ class ComputationGraph(nx.DiGraph):
             for (i,j), (u,v) in enumerated_product(src_lst, dst_lst):
                 self.add_edge(u,v, weight = weight[i,j])
 
-    def calculate_scores(self, clean_data, corrupted_data, loss, which = 'EAP'):
+    def calculate_scores(self, clean_data, corrupted_data, loss, which = 'EAP', **kwargs):
         if which == 'EAP':
             score_function = compute_eap_scores
+        elif which == 'EAP-IG':
+            score_function = compute_eap_ig_scores
         else:
             raise NotImplementedError()
         all_scores = []
         avg_scores = {}
         for data, data_corr in zip(clean_data, corrupted_data):
-            all_scores.append(score_function(self.model, data, data_corr, loss))
+            all_scores.append(score_function(self.model, data, data_corr, loss, **kwargs))
         for key in all_scores[0].keys():
             avg_scores[key] = torch.mean(torch.stack([score_dict[key] for score_dict in all_scores]), 0)
         for key, score in avg_scores.items():
