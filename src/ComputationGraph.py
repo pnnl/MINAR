@@ -185,8 +185,8 @@ class Circuit(nx.DiGraph):
             h = self.mask_handles.pop()
             h.remove()
 
-    def forward(self, data):
+    def forward(self, data, **kwargs):
         self._apply_masks()
-        out = _apply_model(self.model, data)
+        out = _apply_model(self.model, data, **kwargs)
         self._clear_masks()
         return out

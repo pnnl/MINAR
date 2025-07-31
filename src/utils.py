@@ -28,15 +28,15 @@ class MultiplicativeLoss(torch.nn.modules.loss._Loss):
     def forward(self, input: Tensor, target: Tensor) -> Tensor:
         return multiplicative_loss(input, target, reduction=self.reduction)
     
-def _apply_model(model, data):
+def _apply_model(model, data, **kwargs):
     if model.supports_edge_weight and model.supports_edge_attr:
-        return model(data.x, data.edge_index, edge_weight=data.edge_weight, edge_attr=data.edge_attr)
+        return model(data.x, data.edge_index, edge_weight=data.edge_weight, edge_attr=data.edge_attr, **kwargs)
     elif model.supports_edge_weight:
-        return model(data.x, data.edge_index, edge_weight=data.edge_weight)
+        return model(data.x, data.edge_index, edge_weight=data.edge_weight, **kwargs)
     elif model.supports_edge_attr:
-        return model(data.x, data.edge_index, edge_attr=data.edge_attr)
+        return model(data.x, data.edge_index, edge_attr=data.edge_attr, **kwargs)
     else:
-        return model(data.x, data.edge_index)
+        return model(data.x, data.edge_index, **kwargs)
 
 def _place_hook(module, hook_str = 'register_forward_hook'):
     return hasattr(module, hook_str) and \
