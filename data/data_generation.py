@@ -118,6 +118,10 @@ def cycle_test_graph(n, K, rng=None):
     G = nx.cycle_graph(n)
     return _nx_to_test_data(G, K, rng=rng)
 
+def tree_test_graph(r, h, K, rng=None):
+    G = nx.balanced_tree(r,h)
+    return _nx_to_test_data(G, K, rng=rng)
+
 def complete_test_graph(n, K, rng=None):
     G = nx.complete_graph(n)
     return _nx_to_test_data(G, K, rng=rng)

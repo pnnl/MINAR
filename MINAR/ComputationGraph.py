@@ -6,7 +6,7 @@ import torch_geometric as pyg
 import networkx as nx
 import itertools
 from collections import OrderedDict
-from .EAPScores import compute_eap_scores, compute_eap_ig_scores
+from .EAPScores import *
 from .utils import longest_path, _place_hook, _apply_model
 
 def enumerated_product(*args):
@@ -105,7 +105,9 @@ class ComputationGraph(nx.DiGraph):
                 self.add_edge(u,v, weight = weight[i,j])
 
     def calculate_scores(self, clean_data, corrupted_data, loss, which = 'EAP', **kwargs):
-        if which == 'EAP':
+        if which == 'weight_grad':
+            score_function = compute_weight_grad_scores
+        elif which == 'EAP':
             score_function = compute_eap_scores
         elif which == 'EAP-IG':
             score_function = compute_eap_ig_scores

@@ -5,6 +5,22 @@ def _ensure_requires_grad(t):
     if hasattr(t, 'requires_grad') and torch.is_floating_point(t):
         t.requires_grad_()
 
+def compute_weight_grad_scores(model, data, data_corr, loss):
+    scores = {}
+            
+    out_corr = _apply_model(model, data_corr)
+    out_clean = _apply_model(model, data)
+    L = loss(out_corr, out_clean)
+    L.backward()
+
+    for name, module in model.named_modules():
+        if _place_hook(module, hook_str='register_full_backward_hook') and hasattr(module, 'weight'):
+            scores[name] = module.weight.grad.detach().clone().T
+            
+    # clean up gpu memory
+    model.zero_grad(set_to_none=True)
+    return scores
+
 def compute_eap_scores(model, data, data_corr, loss):
     data.apply_(_ensure_requires_grad)
     data_corr.apply_(_ensure_requires_grad)
