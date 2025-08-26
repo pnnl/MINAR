@@ -21,7 +21,7 @@ def compute_weight_grad_scores(model, data, data_corr, loss):
     model.zero_grad(set_to_none=True)
     return scores
 
-def compute_eap_scores(model, data, data_corr, loss):
+def compute_eap_scores(model, data, data_corr, loss, sigmoid_target=False):
     data.apply_(_ensure_requires_grad)
     data_corr.apply_(_ensure_requires_grad)
     activations = []
@@ -61,6 +61,8 @@ def compute_eap_scores(model, data, data_corr, loss):
 
     # get activations and gradients
     out_clean = _apply_model(model, data)
+    if sigmoid_target:
+        out_clean = out_clean.sigmoid()
     L = loss(out_corr, out_clean)
     L.backward()
     for h in clean_handles:
@@ -87,7 +89,7 @@ def compute_eap_scores(model, data, data_corr, loss):
 
     return scores
 
-def compute_eap_ig_scores(model, data, data_corr, loss, steps=5):
+def compute_eap_ig_scores(model, data, data_corr, loss, steps=5, sigmoid_target=False):
     data.apply_(_ensure_requires_grad)
     data_corr.apply_(_ensure_requires_grad)
     data_steps = []
@@ -143,6 +145,8 @@ def compute_eap_ig_scores(model, data, data_corr, loss, steps=5):
     for step in range(steps):
         gradients.append([])
         out_step = _apply_model(model, data_steps[step])
+        if sigmoid_target:
+            out_step = out_step.sigmoid()
         L = loss(out_corr, out_step)
         L.backward()
     for h in backward_handles:

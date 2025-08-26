@@ -7,64 +7,72 @@ from torch_geometric.data import Data
 
 beta = 100.
 
-def path_graph(k, A, m = None, rng=None):
+def path_graph(K, A, m = None, rng=None):
     if rng is None:
         rng = np.random.default_rng()
     elif isinstance(rng, int):
         rng = np.random.default_rng(rng)
     if A is None:
-        A = rng.uniform(1.,10.,k)
+        A = rng.uniform(1.,10.,K)
     if m is None:
-        m = k
-    assert len(A) == k
+        m = K
+    assert len(A) == K
+
     forward_edge_index = torch.tensor(
-        [[i for i in range(k)],
-         [i for i in range(1,k+1)]]
+        [[i for i in range(K)],
+         [i for i in range(1,K+1)]]
     )
     if not isinstance(A, Tensor):
         forward_edge_attr = torch.tensor(A)
     else:
         forward_edge_attr = A
     edge_index = torch.cat((forward_edge_index, forward_edge_index.flip(0)), 1)
-    edge_attr = torch.cat((forward_edge_attr, forward_edge_attr.flip(0))).reshape(-1,1)
+    edge_attr = torch.cat((forward_edge_attr, forward_edge_attr)).reshape(-1,1)
     # beta = torch.sum(forward_edge_attr) + 1
-    x = torch.full((k+1, 1), beta)
+    x = torch.full((K+1, 1), beta)
     x[0] = 0.
+
+    x_bfs = torch.zeros((K+1, 1))
+    x_bfs[0] = 1.
+
     y = x.clone()
     for i in range(m+1):
         y[i] = forward_edge_attr[:i].sum()
     y = y.flatten()
-    reachable = torch.zeros(k+1, dtype=torch.bool)
+
+    reachable = torch.zeros(K+1, dtype=torch.bool)
     reachable[:m+1] = True
-    data = Data(x = x, y = y.float(),
+
+    data = Data(x = x, x_bfs = x_bfs,
+                y = y.float(), reachable = reachable,
                 edge_index = edge_index,
-                edge_attr = edge_attr.float(),
-                reachable = reachable)
+                edge_attr = edge_attr.float()
+                )
     return data
 
 def H_graph(K, m = None):
     if m is None:
         m = K
     forward_v_edge_index = torch.tensor(
-        [[i for i in range(K)],
-         [i for i in range(1,K+1)]]
+        [[i for i in range(m)],
+         [i for i in range(1,m+1)]]
     )
-    forward_v_edge_attr = torch.zeros(K)
+    forward_v_edge_attr = torch.zeros(m)
     forward_u_edge_index = torch.tensor(
-        [[i for i in range(K+1,2*K+1)],
-         [i for i in range(K+2,2*(K+1))]]
+        [[i for i in range(m+1,2*m+1)],
+         [i for i in range(m+2,2*(m+1))]]
     )
-    forward_u_edge_attr = torch.zeros(K)
+    forward_u_edge_attr = torch.zeros(m)
     forward_v_to_u_edge_index = torch.tensor(
-        [[i for i in range(K)],
-         [i for i in range(K+2,2*(K+1))]]
+        [[i for i in range(m)],
+         [i for i in range(m+2,2*(m+1))]]
     )
-    forward_v_to_u_edge_attr = torch.ones(K)
+    forward_v_to_u_edge_attr = torch.ones(m)
     forward_u_to_v_edge_index = torch.tensor(
-        [[i for i in range(K+1,2*K+1)],
-         [i for i in range(1,K+1)]]
+        [[i for i in range(m+1,2*m+1)],
+         [i for i in range(1,m+1)]]
     )
-    forward_u_to_v_edge_attr = torch.ones(K)
+    forward_u_to_v_edge_attr = torch.ones(m)
 
     forward_edge_index = torch.cat((forward_v_edge_index,
                                     forward_u_edge_index,
@@ -75,18 +83,28 @@ def H_graph(K, m = None):
                                     forward_v_to_u_edge_attr,
                                     forward_u_to_v_edge_attr))
     edge_index = torch.cat((forward_edge_index, forward_edge_index.flip(0)), 1)
-    edge_attr = torch.cat((forward_edge_attr, forward_edge_attr.flip(0))).reshape(-1,1)
+    edge_attr = torch.cat((forward_edge_attr, forward_edge_attr)).reshape(-1,1)
     # beta = torch.sum(forward_edge_attr) + 1
-    x = torch.full((2*(K+1), 1), beta)
+
+    x = torch.full((2*(m+1), 1), beta)
     x[0] = 0.
+
+    x_bfs = torch.zeros_like(x)
+    x_bfs[0] = 1.
+
     y = torch.ones_like(x)
     y[0] = 0.
     y = y.flatten()
-    reachable = torch.ones_like(y, dtype=torch.bool)
-    data = Data(x = x, y = y.float(),
+
+    reachable = torch.zeros_like(y, dtype=torch.bool)
+    reachable[0:K+1] = 1.
+    reachable[m+1:m+K+2] = 1.
+
+    data = Data(x = x, x_bfs = x_bfs,
+                y = y.float(), reachable = reachable,
                 edge_index = edge_index,
-                edge_attr = edge_attr.float(),
-                reachable = reachable)
+                edge_attr = edge_attr.float()
+                )
     return data
 
 def _nx_to_test_data(G, K, rng=None):
@@ -109,6 +127,8 @@ def _nx_to_test_data(G, K, rng=None):
     data.y = torch.tensor([distances[i] if reachable[i] else beta for i in range(G.number_of_nodes())])
     data.x = torch.full((G.number_of_nodes(),1), beta)
     data.x[0] = 0.0
+    data.x_bfs = torch.zeros_like(data.x)
+    data.x_bfs[0] = 1.
     data.edge_attr = data.weight.reshape(-1,1)
     data.weight = None
     data.reachable = reachable

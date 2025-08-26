@@ -13,7 +13,9 @@ def enumerated_product(*args):
     yield from zip(itertools.product(*(range(len(x)) for x in args)), itertools.product(*args))
 
 class ComputationGraph(nx.DiGraph):
-    
+    '''
+    Class to construct neuron-level model computation graphs from a GNN model
+    '''
     def __init__(self, model):
         super().__init__()
         
@@ -105,6 +107,9 @@ class ComputationGraph(nx.DiGraph):
                 self.add_edge(u,v, weight = weight[i,j])
 
     def calculate_scores(self, clean_data, corrupted_data, loss, which = 'EAP', **kwargs):
+        '''
+        Calculate edge attribution scores
+        '''
         if which == 'weight_grad':
             score_function = compute_weight_grad_scores
         elif which == 'EAP':
@@ -126,7 +131,9 @@ class ComputationGraph(nx.DiGraph):
                     nx.set_edge_attributes(self, {e : {which : float(score[i,j].abs())}})
 
 class Circuit(nx.DiGraph):
-
+    '''
+    Identify a subgraph from the computation graph as a union of longest paths weighted by attribution scores 
+    '''
     def __init__(self, model,
                  G=None, K=10, key='weight',
                  as_view=True, use_abs=True):
@@ -146,9 +153,10 @@ class Circuit(nx.DiGraph):
             sorted_edges = iter(sorted(nx.get_edge_attributes(G, key).items(), key=lambda item: abs(item[1]), reverse=True))
         else:
             sorted_edges = iter(sorted(nx.get_edge_attributes(G, key).items(), key=lambda item: item[1], reverse=True))
-        path = longest_path(G, G.top_sort[0], G.top_sort[-1], top_sort=G.top_sort, key = key)
-        for j in range(1, len(path)):
-            circuit_edges.add((path[j-1], path[j]))
+        for output in G.top_sort[-1]:
+            path = longest_path(G, G.top_sort[0], [output], top_sort=G.top_sort, key = key)
+            for j in range(1, len(path)):
+                circuit_edges.add((path[j-1], path[j]))
 
         k = 0
         while k < K:
@@ -188,6 +196,9 @@ class Circuit(nx.DiGraph):
             h.remove()
 
     def forward(self, data, **kwargs):
+        '''
+        Apply GNN model using only the components included in the circuit subgraph
+        '''
         self._apply_masks()
         out = _apply_model(self.model, data, **kwargs)
         self._clear_masks()

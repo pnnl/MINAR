@@ -44,6 +44,10 @@ class MinAggConv(MessagePassing):
         return self.up_mlp(tmp)
 
 class MinAggGNN(BasicGNN):
+
+    '''
+    The minimum-aggregated message-passing neural network from https://arxiv.org/abs/2503.19173
+    '''
     
     mlp_hidden_channels = 64
     supports_edge_weight: Final[bool] = False
