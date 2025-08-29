@@ -21,9 +21,9 @@ class ComputationGraph(nx.DiGraph):
         
         self.model = model
         input_dim = model.in_channels
-        self.top_sort = [[f'input.{i}' for i in range(input_dim)]]
+        self.layers = [[f'input.{i}' for i in range(input_dim)]]
         self.layer_modules = []
-        for v in self.top_sort[0]:
+        for v in self.layers[0]:
             self.add_node(v, layer = 0)
         l = 1
         for name, module in model.named_modules():
@@ -34,10 +34,10 @@ class ComputationGraph(nx.DiGraph):
                     self.add_node(v, layer = l)
                     layer.append(v)
                     if hasattr(module, 'weight'):
-                        for u in self.top_sort[-1]:
+                        for u in self.layers[-1]:
                             j = int(re.match('.*?([0-9]+)$', u).group(1))
                             self.add_edge(u, v, weight = float(module.weight[i,j]))
-                self.top_sort.append(layer)
+                self.layers.append(layer)
                 self.layer_modules.append((name, module))
                 l += 1
         
@@ -59,16 +59,16 @@ class ComputationGraph(nx.DiGraph):
                 layer = values[0]
             else:
                 layer = values
-            assert layer < len(self.top_sort) - 1
+            assert layer < len(self.layers) - 1
             
             if isinstance(values, list) and len(values) == 2:
                 weight = values[1]
             else:
-                weight = default_weight * np.ones(len(self.top_sort[layer]))
+                weight = default_weight * np.ones(len(self.layers[layer]))
 
             self.add_node(name, layer = 0)
-            self.top_sort[0].append(name)
-            for i, v in enumerate(self.top_sort[layer]):
+            self.layers[0].append(name)
+            for i, v in enumerate(self.layers[layer]):
                 self.add_edge(name, v, weight = float(weight[i]))
 
     def add_residual_connections(self, connections, default_weight = 1):
@@ -83,7 +83,7 @@ class ComputationGraph(nx.DiGraph):
             if isinstance(source, str):
                 src_lst = [source]
             elif isinstance(source, int):
-                src_lst = self.top_sort[source]
+                src_lst = self.layers[source]
 
             if isinstance(values, list) and \
               len(values) == 2 and \
@@ -98,7 +98,7 @@ class ComputationGraph(nx.DiGraph):
             elif isinstance(destination, list):
                 dst_lst = destination
             elif isinstance(destination, int):
-                dst_lst = self.top_sort[destination]
+                dst_lst = self.layers[destination]
             
             if weight is None:
                 weight = default_weight * np.ones((len(src_lst), len(dst_lst)))
@@ -148,25 +148,32 @@ class Circuit(nx.DiGraph):
 
         assert nx.get_edge_attributes(G, key) is not None
 
+        self.layers = [[] for layer in G.layers]
+
         circuit_edges = set()
         if use_abs:
             sorted_edges = iter(sorted(nx.get_edge_attributes(G, key).items(), key=lambda item: abs(item[1]), reverse=True))
         else:
             sorted_edges = iter(sorted(nx.get_edge_attributes(G, key).items(), key=lambda item: item[1], reverse=True))
-        for output in G.top_sort[-1]:
-            path = longest_path(G, G.top_sort[0], [output], top_sort=G.top_sort, key = key)
+        for output in G.layers[-1]:
+            self.layers[-1].append(output)
+            path = longest_path(G, G.layers[0], [output], top_sort=G.layers, key = key)
             for j in range(1, len(path)):
                 circuit_edges.add((path[j-1], path[j]))
+                if path[j-1] not in self.layers[j-1]:
+                    self.layers[j-1].append(path[j-1])
 
         k = 0
         while k < K:
             edge_to_add, _ = next(sorted_edges)
             if edge_to_add not in circuit_edges:
-                pre_path = longest_path(G, G.top_sort[0], [edge_to_add[0]], top_sort=G.top_sort, key=key)
-                post_path = longest_path(G, [edge_to_add[1]], G.top_sort[-1], top_sort=G.top_sort, key=key)
+                pre_path = longest_path(G, G.layers[0], [edge_to_add[0]], top_sort=G.layers, key=key)
+                post_path = longest_path(G, [edge_to_add[1]], G.layers[-1], top_sort=G.layers, key=key)
                 path = pre_path + post_path
                 for j in range(1, len(path)):
                     circuit_edges.add((path[j-1], path[j]))
+                    if path[j-1] not in self.layers[j-1]:
+                        self.layers[j-1].append(path[j-1])
                 k += 1
         
         super().__init__(G.to_directed(as_view=as_view).edge_subgraph(circuit_edges))
@@ -179,7 +186,7 @@ class Circuit(nx.DiGraph):
 
         for l, (name, module) in enumerate(self.G.layer_modules):
             mask = torch.zeros_like(module.weight)
-            layer = self.G.top_sort[l+1]
+            layer = self.G.layers[l+1]
             input_dict = OrderedDict()
             for v in layer:
                 for u in self.G.predecessors(v):
