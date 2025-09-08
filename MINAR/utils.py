@@ -22,6 +22,10 @@ def _place_hook(module, hook_str = 'register_forward_hook'):
             not isinstance(module, torch.nn.Dropout)
 
 def longest_path(G, sources, targets, top_sort=None, key='weight'):
+    '''
+    Utility function to compute the longest path between sources and targets
+    in a topologically sorted DAG
+    '''
     weights = nx.get_edge_attributes(G, key)
     if top_sort is None:
         top_sort = [list(generation) for generation in nx.topological_generations(G)]

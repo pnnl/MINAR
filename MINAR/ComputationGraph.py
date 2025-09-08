@@ -8,15 +8,20 @@ import itertools
 from collections import OrderedDict
 from .EAPScores import *
 from .utils import longest_path, _place_hook, _apply_model
+from typing import Callable, Optional
 
 def enumerated_product(*args):
     yield from zip(itertools.product(*(range(len(x)) for x in args)), itertools.product(*args))
 
 class ComputationGraph(nx.DiGraph):
     '''
-    Class to construct neuron-level model computation graphs from a GNN model
+    Class to construct neuron-level model computation graphs from a GNN model.
+
+    Args:
+        model (torch.nn.Module): GNN model to build computation graph from
     '''
-    def __init__(self, model):
+    def __init__(self,
+                 model: torch.nn.Module):
         super().__init__()
         
         self.model = model
@@ -41,17 +46,25 @@ class ComputationGraph(nx.DiGraph):
                 self.layer_modules.append((name, module))
                 l += 1
         
-    def add_inputs(self, new_inputs, default_weight = 1):
+    def add_inputs(self,
+                   new_inputs: dict,
+                   default_weight: float = 1):
         '''
-        new_inputs should be a dictionary of the additional inputs to layer with
-        name : layer or
-        name : [layer] or
-        name : [layer, weight]
-        where weight is an array of length equal to the size of layer.
+        Add additional inputs to the model (e.g. edge weights or attributes that are
+        not reflected in the model's in_channels).
+
         Note that the new inputs will always be put in layer 0.
-        If name : [layer] is passed, the weight values will all be default_weight
+        If `name : [layer]` is passed, the weight values will all be `default_weight`
         (e.g. the assumption will be that the new input is added to the activations
         rather than concatenated)
+
+        Args:
+            new_inputs (dict): `new_inputs` should be a dictionary of the additional inputs to layer with
+                - `name : layer` or
+                - `name : [layer]` or
+                - `name : [layer, weight]`
+                where `weight` is an array of length equal to the size of `layer`.
+            default_weight (float, optional): (default: `1`)
         '''
         for name, values in new_inputs.items():
 
@@ -71,13 +84,19 @@ class ComputationGraph(nx.DiGraph):
             for i, v in enumerate(self.layers[layer]):
                 self.add_edge(name, v, weight = float(weight[i]))
 
-    def add_residual_connections(self, connections, default_weight = 1):
+    def add_residual_connections(self,
+                                 connections: dict,
+                                 default_weight: float = 1):
         '''
-        connections should be a dictionary of the desired connections of the form
-        source : destination or
-        source : [destination, weight] where source can be a node or a layer,
-        and destination can each be a node, a list of nodes, or a layer
-        and weight is an array of size len(source) x len(destination)
+        Add residual connections to model computation graph.
+
+        Args:
+            connections (dict): a dictionary of the desired connections of the form:
+                `source : destination` or
+                `source : [destination, weight]` where `source` can be a node or a layer,
+                    and `destination` can each be a node, a list of nodes, or a layer
+                    and `weight` is an array of size `len(source)*len(destination)`
+            default_weight (float, optional): (default: `1`)
         '''
         for source, values in connections.items():
             if isinstance(source, str):
@@ -106,9 +125,28 @@ class ComputationGraph(nx.DiGraph):
             for (i,j), (u,v) in enumerated_product(src_lst, dst_lst):
                 self.add_edge(u,v, weight = weight[i,j])
 
-    def calculate_scores(self, clean_data, corrupted_data, loss, which = 'EAP', **kwargs):
+    def calculate_scores(self,
+                         clean_data: pyg.data.Data,
+                         corrupted_data: pyg.data.Data,
+                         loss: Callable,
+                         which: str = 'EAP',
+                         **kwargs):
         '''
-        Calculate edge attribution scores
+        Calculate edge attribution scores. 
+
+        Args:
+            clean_data (torch_geometric.data.Data): clean input data
+            corrupted_data (torch_geometric.data.Data): corrupted input data
+            loss (Callable): loss function to compute difference between clean and corrupted outputs
+            which (str, optional): score method to use. Currently supported methods:
+                `"weight_grad"`: Compute the gradient of the (clean) output with respect to the individual edge weight
+                `"EAP"`: Edge Attribution Patching from Syed et al. "Attribution Patching Outperforms Automated Circuit Discovery."
+                    (https://arxiv.org/abs/2310.10348)
+                `"EAP-IG"`: Edge Attribution Patching with Integrated Gradients from Hanna et al.
+                    "Have Faith in Faithfulness: Going Beyond Circuit Overlap When Finding Model Mechanisms."
+                    (https://arxiv.org/abs/2403.17806)
+                (default: `"EAP"`)
+            **kwargs (optional): Additional keyword arguments for score calculation
         '''
         if which == 'weight_grad':
             score_function = compute_weight_grad_scores
@@ -132,11 +170,28 @@ class ComputationGraph(nx.DiGraph):
 
 class Circuit(nx.DiGraph):
     '''
-    Identify a subgraph from the computation graph as a union of longest paths weighted by attribution scores 
+    Class to represent subgraphs taken from the computation graph as a union of
+    longest paths weighted by attribution scores.
+
+    Args:
+        model (torch.nn.Module): GNN model to build computation graph from and use for inference
+        G (Optional[ComputationGraph]): base `ComputationGraph` object to select from. If
+            `None`, `G` will be built using `model`.
+        K (int, optional): number of edges to add after selecting initial paths (default: `10`)
+        key (str, optional): which score to use as weight during circuit selection.
+            Scores must be calculated before they can be used (default: `"weight"`)
+        as_view (bool, optional): whether or not to use `G` in-place as a view.
+            If `False`, a copy of `G` will be made (default: `True`)
+        use_abs (bool, optional): whether or not to take the absolute value of edge scores
+            when selecting edges for the circuit (default: `True`)
     '''
-    def __init__(self, model,
-                 G=None, K=10, key='weight',
-                 as_view=True, use_abs=True):
+    def __init__(self,
+                 model: torch.nn.Module,
+                 G: Optional[ComputationGraph]=None,
+                 K: int=10,
+                 key: str='weight',
+                 as_view:bool=True,
+                 use_abs:bool=True):
 
         self.model = model
         self.model_state_dict = copy.deepcopy(model.state_dict())
@@ -179,6 +234,9 @@ class Circuit(nx.DiGraph):
         super().__init__(G.to_directed(as_view=as_view).edge_subgraph(circuit_edges))
 
     def _apply_masks(self):
+        '''
+        Utility function to apply parameter masks to model
+        '''
         def _mask_module(mask):
             def _mask_pre_hook(module, input):
                 module.weight.data *= mask
@@ -197,14 +255,23 @@ class Circuit(nx.DiGraph):
             self.mask_handles.append(module.register_forward_pre_hook(_mask_module(mask)))
     
     def _clear_masks(self):
+        '''
+        Utility function to clear parameter masks from model
+        '''
         self.model.load_state_dict(self.model_state_dict)
         while self.mask_handles:
             h = self.mask_handles.pop()
             h.remove()
 
-    def forward(self, data, **kwargs):
+    def forward(self,
+                data: pyg.data.Data,
+                **kwargs):
         '''
-        Apply GNN model using only the components included in the circuit subgraph
+        Apply GNN model using only the components included in the circuit subgraph.
+
+        Args:
+            data (torch_geometric.data.Data): input data for forward pass
+            **kwargs (optional): additional keyword arguments to model
         '''
         self._apply_masks()
         out = _apply_model(self.model, data, **kwargs)

@@ -46,6 +46,9 @@ def joint_loss(input, target,
         return torch.sum(errors) / torch.sum(weight)
 
 class JointLoss(torch.nn.modules.loss._Loss):
+    '''
+    Class to apply different losses to different output coordinates
+    '''
     def __init__(self, criteria, is_classification, weight=None, size_average=None, reduce=None, reduction: str = "sum") -> None:
         super().__init__(size_average, reduce, reduction)
         self.criteria = criteria
