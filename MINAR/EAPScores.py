@@ -2,7 +2,6 @@ import torch
 from torch import Tensor
 import torch_geometric
 from .utils import _place_hook, _apply_model
-from typing import Optional
 
 def _ensure_requires_grad(t):
     '''
