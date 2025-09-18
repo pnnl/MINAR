@@ -2,6 +2,7 @@ import re
 import copy
 import numpy as np
 import torch
+from torch import Tensor
 import torch_geometric as pyg
 import networkx as nx
 import itertools
@@ -21,7 +22,7 @@ class ComputationGraph(nx.DiGraph):
         model (torch.nn.Module): GNN model to build computation graph from
     '''
     def __init__(self,
-                 model: torch.nn.Module):
+                 model: torch.nn.Module) -> None:
         super().__init__()
         
         self.model = model
@@ -48,12 +49,14 @@ class ComputationGraph(nx.DiGraph):
         
     def add_inputs(self,
                    new_inputs: dict,
-                   default_weight: float = 1):
+                   default_weight: float = 1) -> None:
         '''
         Add additional inputs to the model (e.g. edge weights or attributes that are
         not reflected in the model's in_channels).
 
-        Note that the new inputs will always be put in layer 0.
+        Note that the new inputs will always be put in layer 0, but they can be connected to any layer
+        in the computation graph.
+        
         If `name : [layer]` is passed, the weight values will all be `default_weight`
         (e.g. the assumption will be that the new input is added to the activations
         rather than concatenated)
@@ -86,7 +89,7 @@ class ComputationGraph(nx.DiGraph):
 
     def add_residual_connections(self,
                                  connections: dict,
-                                 default_weight: float = 1):
+                                 default_weight: float = 1) -> None:
         '''
         Add residual connections to model computation graph.
 
@@ -130,7 +133,7 @@ class ComputationGraph(nx.DiGraph):
                          corrupted_data: pyg.data.Data,
                          loss: Callable,
                          which: str = 'EAP',
-                         **kwargs):
+                         **kwargs) -> None:
         '''
         Calculate edge attribution scores. 
 
@@ -191,7 +194,7 @@ class Circuit(nx.DiGraph):
                  K: int=10,
                  key: str='weight',
                  as_view:bool=True,
-                 use_abs:bool=True):
+                 use_abs:bool=True) -> None:
 
         self.model = model
         self.model_state_dict = copy.deepcopy(model.state_dict())
@@ -233,7 +236,7 @@ class Circuit(nx.DiGraph):
         
         super().__init__(G.to_directed(as_view=as_view).edge_subgraph(circuit_edges))
 
-    def _apply_masks(self):
+    def _apply_masks(self) -> None:
         '''
         Utility function to apply parameter masks to model
         '''
@@ -254,7 +257,7 @@ class Circuit(nx.DiGraph):
                 mask[i,j] = self.has_edge(u,v)
             self.mask_handles.append(module.register_forward_pre_hook(_mask_module(mask)))
     
-    def _clear_masks(self):
+    def _clear_masks(self) -> None:
         '''
         Utility function to clear parameter masks from model
         '''
@@ -265,13 +268,16 @@ class Circuit(nx.DiGraph):
 
     def forward(self,
                 data: pyg.data.Data,
-                **kwargs):
+                **kwargs) -> Tensor:
         '''
         Apply GNN model using only the components included in the circuit subgraph.
 
         Args:
             data (torch_geometric.data.Data): input data for forward pass
             **kwargs (optional): additional keyword arguments to model
+
+        Returns:
+            Output of the model restricted to circuit components.
         '''
         self._apply_masks()
         out = _apply_model(self.model, data, **kwargs)

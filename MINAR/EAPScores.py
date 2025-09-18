@@ -1,11 +1,36 @@
 import torch
+from torch import Tensor
+import torch_geometric
 from .utils import _place_hook, _apply_model
+from typing import Optional
 
 def _ensure_requires_grad(t):
+    '''
+    Utility function to enforce `requires_grad` on `t`.
+    '''
     if hasattr(t, 'requires_grad') and torch.is_floating_point(t):
         t.requires_grad_()
 
-def compute_weight_grad_scores(model, data, data_corr, loss):
+def compute_weight_grad_scores(
+        model: torch.nn.Module,
+        data: torch_geometric.data.Data,
+        data_corr: torch_geometric.data.Data,
+        loss: torch.nn.modules.loss._Loss) -> dict[str,Tensor]:
+    '''
+    Compute score for a computation edge :math:`(\psi_i, \psi_j)` with weight
+    :math:`w_{ij}` by
+    .. math::
+        \frac{\partial}{\partial w_{ij}} L(x_{\text{clean}}, x_{\text{corrupted}}).
+
+    Args:
+        model (torch.nn.Module): GNN module to compute scores for.
+        data (torch_geometric.data.Data): clean input Data object.
+        data_corr (torch_geometric.data.Data): corrupted input Data object.
+        loss (torch.nn.modules.loss._Loss): loss function to compute scores with.
+
+    Returns:
+        Dictionary of edge names and score values.
+    '''
     scores = {}
             
     out_corr = _apply_model(model, data_corr)
@@ -21,7 +46,36 @@ def compute_weight_grad_scores(model, data, data_corr, loss):
     model.zero_grad(set_to_none=True)
     return scores
 
-def compute_eap_scores(model, data, data_corr, loss, sigmoid_target=False):
+def compute_eap_scores(model: torch.nn.Module,
+                       data: torch_geometric.data.Data,
+                       data_corr: torch_geometric.data.Data,
+                       loss: torch.nn.modules.loss._Loss,
+                       sigmoid_target: bool=False) -> dict[str,Tensor]:
+    '''
+    Compute edge attribution patching (EAP) score for a computation edge
+    :math:`(\psi_i, \psi_j)`.
+     
+    The EAP score is given by
+    ..math::
+        \operatorname{EAP}_{(i,j)}(x,x') = (z_i'-z_i)^\transpose \partials{\psi_j}
+            L(\Psi(x),\Psi(x'))
+    
+    where :math:`x` is the clean data, :math:`x'` is the corrupted data, and
+    :math:`z_i` and :math:`z_i'` are the activations of neuron :math:`\psi_i`
+    on :math:`x` and :math:`x'`, respectively.
+
+    Args:
+        model (torch.nn.Module): GNN module to compute scores for.
+        data (torch_geometric.data.Data): clean input Data object.
+        data_corr (torch_geometric.data.Data): corrupted input Data object.
+        loss (torch.nn.modules.loss._Loss): loss function to compute scores with.
+        sigmoid_target (bool, optional): whether or not to apply the sigmoid function
+            to the target for `loss`. Useful for binary classification losses
+            (e.g. `torch.nn.modules.loss.BCEWithLogitsLoss`). (Default: `False`)
+
+    Returns:
+        Dictionary of edge names and score values.
+    '''
     data.apply_(_ensure_requires_grad)
     data_corr.apply_(_ensure_requires_grad)
     activations = []
@@ -89,7 +143,41 @@ def compute_eap_scores(model, data, data_corr, loss, sigmoid_target=False):
 
     return scores
 
-def compute_eap_ig_scores(model, data, data_corr, loss, steps=5, sigmoid_target=False):
+def compute_eap_ig_scores(model: torch.nn.Module,
+                          data: torch_geometric.data.Data,
+                          data_corr: torch_geometric.data.Data,
+                          loss: torch.nn.modules.loss._Loss,
+                          steps: int=5,
+                          sigmoid_target: bool=False) -> dict[str,Tensor]:
+    '''
+    Compute edge attribution patching with integrated gradients (EAP-IG) score
+    for a computation edge :math:`(\psi_i, \psi_j)`.
+     
+      The EAP-IG score is given by
+    ..math::
+        \operatorname{EAP-IG}_{(i,j)}(x,x')
+            = (z_i'-z_i)^\transpose \frac{1}{m}\sum_{k=1}^m \partials{\psi_j} 
+                L\left(\Psi(x),\Psi\left(x'+\frac{k}{m}(x-x')\right)\right).
+    
+    where :math:`k` is the number of steps, :math:`x` is the clean data,
+    :math:`x'` is the corrupted data, and
+    :math:`z_i` and :math:`z_i'` are the activations of neuron :math:`\psi_i`
+    on :math:`x` and :math:`x'`, respectively.
+
+    Args:
+        model (torch.nn.Module): GNN module to compute scores for.
+        data (torch_geometric.data.Data): clean input Data object.
+        data_corr (torch_geometric.data.Data): corrupted input Data object.
+        loss (torch.nn.modules.loss._Loss): loss function to compute scores with.
+        steps (int, optional): How many steps to use for IG computation. Using
+            `1` is equivalent to EAP. (Default: 5)
+        sigmoid_target (bool, optional): whether or not to apply the sigmoid function
+            to the target for `loss`. Useful for binary classification losses
+            (e.g. `torch.nn.modules.loss.BCEWithLogitsLoss`). (Default: `False`)
+            
+    Returns:
+        Dictionary of edge names and score values.
+    '''
     data.apply_(_ensure_requires_grad)
     data_corr.apply_(_ensure_requires_grad)
     data_steps = []

@@ -8,6 +8,11 @@ from torch_geometric.data import Data
 beta = 100.
 
 def path_graph(K, A, m = None, rng=None):
+    '''
+    Method to generate labeled path graph of length :math:`K`
+    with weights :math:`A`, with :math:`m` hops for reachability
+    and Bellman-Ford labels. (Default: :math:`m=K`)
+    '''
     if rng is None:
         rng = np.random.default_rng()
     elif isinstance(rng, int):
@@ -51,6 +56,10 @@ def path_graph(K, A, m = None, rng=None):
     return data
 
 def H_graph(K, m = None):
+    '''
+    Method to generate labeled graph :math:`H_K` from https://arxiv.org/abs/2503.19173.
+    (Default: :math:`m=K`)
+    '''
     if m is None:
         m = K
     forward_v_edge_index = torch.tensor(
@@ -108,6 +117,10 @@ def H_graph(K, m = None):
     return data
 
 def _nx_to_test_data(G, K, rng=None):
+    '''
+    Utility method to convert `networkx.Graph` objects to `torch_geoemtric.data.Data`
+    objects, with reachability and Bellman-Ford labels for :math:`K` hops.
+    '''
     if rng is None:
         rng = np.random.default_rng()
     elif isinstance(rng, int):
