@@ -13,7 +13,7 @@ import torch
 from torch import Tensor
 
 class MinAggConv(MessagePassing):
-    '''
+    r'''
     The minimum-aggregated :class:`MinAggConv` operator from https://arxiv.org/abs/2503.19173.
 
     .. math::
@@ -63,7 +63,7 @@ class MinAggConv(MessagePassing):
         return self.up_mlp(tmp)
 
 class MinAggGNN(BasicGNN):
-    '''
+    r'''
     The minimum-aggregated message-passing neural network from https://arxiv.org/abs/2503.19173,
     using the :class:`~MinAggConv` operator for message passing.
 
@@ -137,7 +137,7 @@ class MinAggGNN(BasicGNN):
         num_sampled_nodes_per_hop: Optional[List[int]] = None,
         num_sampled_edges_per_hop: Optional[List[int]] = None,
     ) -> Tensor:
-        '''
+        r'''
         Forward Pass.
 
         Args:

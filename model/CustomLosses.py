@@ -8,7 +8,7 @@ def multiplicative_loss(
         target: Tensor,
         reduction: str = "sum",
         weight: Optional[Tensor] = None,):
-    '''
+    r'''
     The continuous multiplicative loss from https://arxiv.org/abs/2503.19173.
 
     See :class:`~MultiplicativeLoss` for details.
@@ -37,7 +37,7 @@ def multiplicative_loss(
         return torch.sum(errors) / torch.sum(weight)
 
 class MultiplicativeLoss(_Loss):
-    '''
+    r'''
     The continuous multiplicative loss from https://arxiv.org/abs/2503.19173.
     
     For an input :math:`x` and target :math:`y`, the sum-reduced loss is given by
@@ -73,7 +73,7 @@ def joint_loss(input: Tensor,
                reduction: str = "sum",
                weight: Union[Tensor, List] = None
                ) -> Tensor:
-    '''
+    r'''
     Function to apply different losses to different output coordinates.
 
     See :class:`~JointLoss` for details.
@@ -103,7 +103,7 @@ def joint_loss(input: Tensor,
         return torch.sum(errors) / torch.sum(weight)
 
 class JointLoss(_Loss):
-    '''
+    r'''
     Class to apply different losses to different output coordinates.
 
     If `losses` contains :math:`k` losses :math:`[\ell_1, \dots, \ell_k]` and

@@ -15,7 +15,7 @@ def compute_weight_grad_scores(
         data: torch_geometric.data.Data,
         data_corr: torch_geometric.data.Data,
         loss: torch.nn.modules.loss._Loss) -> dict[str,Tensor]:
-    '''
+    r'''
     Compute score for a computation edge :math:`(\psi_i, \psi_j)` with weight
     :math:`w_{ij}` by
     .. math::
@@ -50,7 +50,7 @@ def compute_eap_scores(model: torch.nn.Module,
                        data_corr: torch_geometric.data.Data,
                        loss: torch.nn.modules.loss._Loss,
                        sigmoid_target: bool=False) -> dict[str,Tensor]:
-    '''
+    r'''
     Compute edge attribution patching (EAP) score for a computation edge
     :math:`(\psi_i, \psi_j)`.
      
@@ -148,7 +148,7 @@ def compute_eap_ig_scores(model: torch.nn.Module,
                           loss: torch.nn.modules.loss._Loss,
                           steps: int=5,
                           sigmoid_target: bool=False) -> dict[str,Tensor]:
-    '''
+    r'''
     Compute edge attribution patching with integrated gradients (EAP-IG) score
     for a computation edge :math:`(\psi_i, \psi_j)`.
      
