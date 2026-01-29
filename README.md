@@ -5,6 +5,9 @@ This contains the code for the submission MINAR: Mechanistic Interpretability fo
 ## Instructions
 
 ### Bellman-Ford
+
+Data generation can be found in the folder `bellman_ford_experiments/data`.
+
 Bellman-Ford experiments are divided into subfolders. Each subfolder contains 
 1. A training notebook
 2. A circuit analysis notebook, and
