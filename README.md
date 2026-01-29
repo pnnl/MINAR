@@ -3,8 +3,6 @@
 This contains the code for the submission MINAR: Mechanistic Interpretability for Neural Algorithmic Reasoning to ICML 2026. The code was developed and tested using Python 3.12.3. The package requirements are listed in `environment.yml`.
 
 ## Instructions
-Pretrained model checkpoints, scored computation graphs, and circuit dictionaries can be found in the file `precomputed_data.zip`,
-along with clean and perturbed probing datasets.
 
 ### Bellman-Ford
 Bellman-Ford experiments are divided into subfolders. Each subfolder contains 
