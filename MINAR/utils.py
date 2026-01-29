@@ -3,7 +3,6 @@ import torch
 from torch import Tensor
 from typing import Optional
 import torch_geometric as pyg
-
 def _apply_model(model: torch.nn.Module,
                  data: pyg.data.Data,
                  **kwargs) -> Tensor:
